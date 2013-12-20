@@ -44,7 +44,7 @@ libmm-venc-def += -DMAX_RES_720P
 endif
 ifeq ($(TARGET_USES_ION),true)
 ifneq ($(BOARD_USES_PMEM_ADSP),true)
-libOmxVdec-def += -DUSE_ION
+libmm-venc-def += -DUSE_ION
 endif
 endif
 libmm-venc-def += -D_ANDROID_ICS_
