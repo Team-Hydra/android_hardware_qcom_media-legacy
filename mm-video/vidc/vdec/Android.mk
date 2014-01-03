@@ -54,8 +54,8 @@ libOmxVdec-def += -DUSE_ION
 include $(CLEAR_VARS)
 LOCAL_PATH:= $(ROOT_DIR)
 
-ifeq ($(TARGET_QCOM_DISPLAY_VARIANT),caf)
-DISPLAY := display-caf
+ifeq ($(TARGET_QCOM_DISPLAY_VARIANT),legacy)
+DISPLAY := display-legacy
 libOmxVdec-def += -DDISPLAYCAF
 else
 DISPLAY := display
@@ -72,13 +72,13 @@ libmm-vdec-inc	        += $(OMX_VIDEO_PATH)/DivxDrmDecrypt/inc
 libmm-vdec-inc          += hardware/qcom/display-legacy/libgralloc
 libmm-vdec-inc          += frameworks/native/include/media/openmax
 libmm-vdec-inc          += frameworks/native/include/media/hardware
-libmm-vdec-inc          += hardware/qcom/media-caf/libc2dcolorconvert
+libmm-vdec-inc          += hardware/qcom/media-legacy/libc2dcolorconvert
 libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libcopybit
 libmm-vdec-inc          += frameworks/av/include/media/stagefright
 libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libqservice
 libmm-vdec-inc          += frameworks/av/media/libmediaplayerservice
 libmm-vdec-inc          += frameworks/native/include/binder
-ifeq ($(DISPLAY),display-caf)
+ifeq ($(DISPLAY),display-legacy)
 libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libqdutils
 endif
 
@@ -93,7 +93,7 @@ LOCAL_SHARED_LIBRARIES  := liblog libutils libbinder libcutils libdl
 
 LOCAL_SHARED_LIBRARIES  += libdivxdrmdecrypt
 LOCAL_SHARED_LIBRARIES += libqservice
-ifeq ($(DISPLAY),display-caf)
+ifeq ($(DISPLAY),display-legacy)
 LOCAL_SHARED_LIBRARIES  += libqdMetaData
 endif
 
