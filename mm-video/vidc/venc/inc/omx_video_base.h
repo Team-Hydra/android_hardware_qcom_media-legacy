@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -8,7 +8,7 @@ modification, are permitted provided that the following conditions are met:
     * Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-    * Neither the name of Code Aurora nor
+    * Neither the name of the Linux Foundation nor
       the names of its contributors may be used to endorse or promote
       products derived from this software without specific prior written
       permission.
@@ -41,8 +41,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //                             Include Files
 //////////////////////////////////////////////////////////////////////////////
 
-#define LOG_TAG "OMX-VENC-720p"
-#include <stdlib.h>
+#include<stdlib.h>
 #include <stdio.h>
 #include <sys/mman.h>
 #ifdef _ANDROID_
@@ -60,6 +59,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "omx_video_common.h"
 #include "extra_data_handler.h"
 #include <linux/videodev2.h>
+#include <dlfcn.h>
+#include "C2DColorConverter.h"
 
 #ifdef _ANDROID_
 using namespace android;
@@ -72,21 +73,7 @@ public:
 };
 
 #include <utils/Log.h>
-#ifdef ENABLE_DEBUG_LOW
-#define DEBUG_PRINT_LOW ALOGV
-#else
-#define DEBUG_PRINT_LOW
-#endif
-#ifdef ENABLE_DEBUG_HIGH
-#define DEBUG_PRINT_HIGH  ALOGV
-#else
-#define DEBUG_PRINT_HIGH
-#endif
-#ifdef ENABLE_DEBUG_ERROR
-#define DEBUG_PRINT_ERROR ALOGE
-#else
-#define DEBUG_PRINT_ERROR
-#endif
+#define LOG_TAG "OMX-VENC-720p"
 
 #else //_ANDROID_
 #define DEBUG_PRINT_LOW
@@ -94,19 +81,9 @@ public:
 #define DEBUG_PRINT_ERROR
 #endif // _ANDROID_
 
-#ifdef _MSM8974_
-#define DEBUG_PRINT_LOW
-#define DEBUG_PRINT_HIGH printf
-#define DEBUG_PRINT_ERROR printf
-#endif
-
 #ifdef USE_ION
     static const char* MEM_DEVICE = "/dev/ion";
-    #ifdef MAX_RES_720P
-    #define MEM_HEAP_ID ION_CAMERA_HEAP_ID
-    #else
     #define MEM_HEAP_ID ION_CP_MM_HEAP_ID
-    #endif
 #elif MAX_RES_720P
 static const char* MEM_DEVICE = "/dev/pmem_adsp";
 #elif MAX_RES_1080P_EBI
@@ -138,20 +115,18 @@ static const char* MEM_DEVICE = "/dev/pmem_smipool";
 #define BITMASK_SIZE(mIndex) (((mIndex) + BITS_PER_BYTE - 1)/BITS_PER_BYTE)
 #define BITMASK_OFFSET(mIndex) ((mIndex)/BITS_PER_BYTE)
 #define BITMASK_FLAG(mIndex) (1 << ((mIndex) % BITS_PER_BYTE))
-#define BITMASK_CLEAR(mArray,mIndex) (mArray)[BITMASK_OFFSET(mIndex)] \
-        &=  ~(BITMASK_FLAG(mIndex))
-#define BITMASK_SET(mArray,mIndex)  (mArray)[BITMASK_OFFSET(mIndex)] \
-        |=  BITMASK_FLAG(mIndex)
-#define BITMASK_PRESENT(mArray,mIndex) ((mArray)[BITMASK_OFFSET(mIndex)] \
-        & BITMASK_FLAG(mIndex))
-#define BITMASK_ABSENT(mArray,mIndex) (((mArray)[BITMASK_OFFSET(mIndex)] \
-        & BITMASK_FLAG(mIndex)) == 0x0)
-#define BITMASK_PRESENT(mArray,mIndex) ((mArray)[BITMASK_OFFSET(mIndex)] \
-        & BITMASK_FLAG(mIndex))
-#define BITMASK_ABSENT(mArray,mIndex) (((mArray)[BITMASK_OFFSET(mIndex)] \
-        & BITMASK_FLAG(mIndex)) == 0x0)
+
+//BitMask Management logic for U32
+#define BITMASK_CLEAR_U32(mArray,mIndex) ((mArray) & (~(BITMASK_FLAG(mIndex))))
+#define BITMASK_SET_U32(mArray,mIndex)  ((mArray) | BITMASK_FLAG(mIndex))
+#define BITMASK_PRESENT_U32(mArray,mIndex) ((mArray) & BITMASK_FLAG(mIndex))
+#define BITMASK_ABSENT_U32(mArray,mIndex) (((mArray) & BITMASK_FLAG(mIndex)) == 0x0)
+
+
+
 #ifdef _ANDROID_ICS_
 #define MAX_NUM_INPUT_BUFFERS 32
+#define MAX_NUM_OUTPUT_BUFFERS 32
 #endif
 void* message_thread(void *);
 // OMX video class
@@ -159,11 +134,36 @@ class omx_video: public qc_omx_component
 {
 protected:
 #ifdef _ANDROID_ICS_
-  bool get_syntaxhdr_enable;
   bool meta_mode_enable;
+  bool c2d_opened;
   encoder_media_buffer_type meta_buffers[MAX_NUM_INPUT_BUFFERS];
-  OMX_BUFFERHEADERTYPE meta_buffer_hdr[MAX_NUM_INPUT_BUFFERS];
+  OMX_BUFFERHEADERTYPE *opaque_buffer_hdr[MAX_NUM_INPUT_BUFFERS];
   bool mUseProxyColorFormat;
+  OMX_BUFFERHEADERTYPE  *psource_frame;
+  OMX_BUFFERHEADERTYPE  *pdest_frame;
+  bool secure_session;
+  int secure_color_format;
+  class omx_c2d_conv {
+  public:
+    omx_c2d_conv();
+    ~omx_c2d_conv();
+	bool init();
+	bool open(unsigned int height,unsigned int width,
+			  ColorConvertFormat src,
+			  ColorConvertFormat dest);
+	bool convert(int src_fd, void *src_viraddr,
+				 int dest_fd,void *dest_viraddr);
+	bool get_buffer_size(int port,unsigned int &buf_size);
+	int get_src_format();
+	void close();
+  private:
+     C2DColorConverterBase *c2dcc;
+    void *mLibHandle;
+	ColorConvertFormat src_format;
+    createC2DColorConverter_t *mConvertOpen;
+    destroyC2DColorConverter_t *mConvertClose;
+  };
+  omx_c2d_conv c2d_conv;
 #endif
 public:
   omx_video();  // constructor
@@ -197,11 +197,15 @@ public:
   virtual bool dev_empty_buf(void *, void *,unsigned,unsigned) = 0;
   virtual bool dev_fill_buf(void *buffer, void *,unsigned,unsigned) = 0;
   virtual bool dev_get_buf_req(OMX_U32 *,OMX_U32 *,OMX_U32 *,OMX_U32) = 0;
+  virtual bool dev_get_curr_perf_lvl(OMX_PTR) = 0;
   virtual bool dev_get_seq_hdr(void *, unsigned, unsigned *) = 0;
   virtual bool dev_loaded_start(void) = 0;
   virtual bool dev_loaded_stop(void) = 0;
   virtual bool dev_loaded_start_done(void) = 0;
   virtual bool dev_loaded_stop_done(void) = 0;
+  virtual bool is_secure_session(void) = 0;
+  virtual bool dev_get_uncache_flag(void) = 0;
+  virtual bool dev_get_capability_ltrcount(OMX_U32 *, OMX_U32 *, OMX_U32 *) = 0;
 #ifdef _ANDROID_ICS_
   void omx_release_meta_buffer(OMX_BUFFERHEADERTYPE *buffer);
 #endif
@@ -379,7 +383,9 @@ public:
     OMX_COMPONENT_GENERATE_PAUSE_DONE = 0xE,
     OMX_COMPONENT_GENERATE_RESUME_DONE = 0xF,
     OMX_COMPONENT_GENERATE_STOP_DONE = 0x10,
-    OMX_COMPONENT_GENERATE_HARDWARE_ERROR = 0x11
+    OMX_COMPONENT_GENERATE_HARDWARE_ERROR = 0x11,
+    OMX_COMPONENT_GENERATE_ETB_OPQ = 0x12,
+    OMX_COMPONENT_GENERATE_LTRUSE_FAILED = 0x13
   };
 
   struct omx_event
@@ -418,7 +424,8 @@ public:
                                       OMX_PTR              appData,
                                       OMX_U32              bytes);
 #ifdef _ANDROID_ICS_
-  OMX_ERRORTYPE allocate_input_meta_buffer(OMX_BUFFERHEADERTYPE **bufferHdr,
+  OMX_ERRORTYPE allocate_input_meta_buffer(OMX_HANDLETYPE       hComp,
+                                      OMX_BUFFERHEADERTYPE **bufferHdr,
                                       OMX_PTR              appData,
                                       OMX_U32              bytes);
 #endif
@@ -449,9 +456,15 @@ public:
 
   OMX_ERRORTYPE fill_buffer_done(OMX_HANDLETYPE hComp,
                                  OMX_BUFFERHEADERTYPE * buffer);
-  OMX_ERRORTYPE empty_this_buffer_proxy(OMX_HANDLETYPE       hComp,
+  OMX_ERRORTYPE empty_this_buffer_proxy(OMX_HANDLETYPE hComp,
                                         OMX_BUFFERHEADERTYPE *buffer);
-
+  OMX_ERRORTYPE empty_this_buffer_opaque(OMX_HANDLETYPE hComp,
+                                  OMX_BUFFERHEADERTYPE *buffer);
+  OMX_ERRORTYPE push_input_buffer(OMX_HANDLETYPE hComp);
+  OMX_ERRORTYPE convert_queue_buffer(OMX_HANDLETYPE hComp,
+     struct pmem &Input_pmem_info,unsigned &index);
+  OMX_ERRORTYPE queue_meta_buffer(OMX_HANDLETYPE hComp,
+     struct pmem &Input_pmem_info);
   OMX_ERRORTYPE fill_this_buffer_proxy(OMX_HANDLETYPE       hComp,
                                        OMX_BUFFERHEADERTYPE *buffer);
   bool release_done();
@@ -521,20 +534,27 @@ public:
   OMX_CONFIG_ROTATIONTYPE m_sConfigFrameRotation;
   OMX_CONFIG_INTRAREFRESHVOPTYPE m_sConfigIntraRefreshVOP;
   OMX_VIDEO_PARAM_QUANTIZATIONTYPE m_sSessionQuantization;
+  OMX_QCOM_VIDEO_PARAM_QPRANGETYPE m_sSessionQPRange;
   OMX_VIDEO_PARAM_AVCSLICEFMO m_sAVCSliceFMO;
   QOMX_VIDEO_INTRAPERIODTYPE m_sIntraperiod;
   OMX_VIDEO_PARAM_ERRORCORRECTIONTYPE m_sErrorCorrection;
   OMX_VIDEO_PARAM_INTRAREFRESHTYPE m_sIntraRefresh;
   OMX_U32 m_sExtraData;
-  OMX_U32 m_sDebugSliceinfo;
-
+  OMX_U32 m_input_msg_id;
+  QOMX_VIDEO_PARAM_LTRMODE_TYPE m_sParamLTRMode;
+  QOMX_VIDEO_PARAM_LTRCOUNT_TYPE m_sParamLTRCount;
+  QOMX_VIDEO_CONFIG_LTRPERIOD_TYPE m_sConfigLTRPeriod;
+  QOMX_VIDEO_CONFIG_LTRUSE_TYPE m_sConfigLTRUse;
   // fill this buffer queue
   omx_cmd_queue         m_ftb_q;
   // Command Q for rest of the events
   omx_cmd_queue         m_cmd_q;
   omx_cmd_queue         m_etb_q;
+  omx_cmd_queue         m_opq_meta_q;
+  omx_cmd_queue         m_opq_pmem_q;
   // Input memory pointer
   OMX_BUFFERHEADERTYPE  *m_inp_mem_ptr;
+  OMX_BUFFERHEADERTYPE meta_buffer_hdr[MAX_NUM_INPUT_BUFFERS];
   // Output memory pointer
   OMX_BUFFERHEADERTYPE  *m_out_mem_ptr;
 
@@ -550,6 +570,8 @@ public:
   unsigned int m_flags;
   unsigned int m_etb_count;
   unsigned int m_fbd_count;
+
+  unsigned int m_curr_perf;
 #ifdef _ANDROID_
   // Heap pointer to frame buffers
   sp<MemoryHeapBase>    m_heap_ptr;
@@ -558,6 +580,12 @@ public:
   bool m_event_port_settings_sent;
   OMX_U8                m_cRole[OMX_MAX_STRINGNAME_SIZE];
   extra_data_handler extra_data_handle;
+  unsigned int extradata_len[MAX_NUM_OUTPUT_BUFFERS];
+  unsigned int extradata_offset[MAX_NUM_OUTPUT_BUFFERS];
+  unsigned int extradata_ltrid[MAX_NUM_OUTPUT_BUFFERS];
+  static int m_venc_num_instances;
+  static int m_venc_ion_devicefd;
+  static pthread_mutex_t m_venc_ionlock;
 
 private:
 #ifdef USE_ION

@@ -9,17 +9,15 @@ LOCAL_PATH:= $(ROOT_DIR)
 # 				Common definitons
 # ---------------------------------------------------------------------------------
 
-libOmxVdec-def := -D__alignx\(x\)=__attribute__\(\(__aligned__\(x\)\)\)
 libOmxVdec-def += -D__align=__alignx
 libOmxVdec-def += -Dinline=__inline
-libOmxVdec-def += -g -O3
 libOmxVdec-def += -DIMAGE_APPS_PROC
 libOmxVdec-def += -D_ANDROID_
 libOmxVdec-def += -DCDECL
 libOmxVdec-def += -DT_ARM
 libOmxVdec-def += -DNO_ARM_CLZ
 libOmxVdec-def += -UENABLE_DEBUG_LOW
-#libOmxVdec-def += -DENABLE_DEBUG_HIGH
+libOmxVdec-def += -DENABLE_DEBUG_HIGH
 libOmxVdec-def += -DENABLE_DEBUG_ERROR
 libOmxVdec-def += -UINPUT_BUFFER_LOG
 libOmxVdec-def += -UOUTPUT_BUFFER_LOG
@@ -37,18 +35,17 @@ ifeq ($(TARGET_BOARD_PLATFORM),msm8974)
 libOmxVdec-def += -DMAX_RES_1080P
 libOmxVdec-def += -DMAX_RES_1080P_EBI
 libOmxVdec-def += -DPROCESS_EXTRADATA_IN_OUTPUT_PORT
-libOmxVdec-def += -D_MSM8974_
-endif
-ifeq ($(TARGET_BOARD_PLATFORM),msm7x27a)
-libOmxVdec-def += -DMAX_RES_720P
+libOmxVdec-def += -D_COPPER_
 endif
 ifeq ($(TARGET_BOARD_PLATFORM),msm7x30)
 libOmxVdec-def += -DMAX_RES_720P
 endif
-ifeq ($(TARGET_USES_ION),true)
-libOmxVdec-def += -DUSE_ION
-endif
+
 libOmxVdec-def += -D_ANDROID_ICS_
+
+#ifeq ($(TARGET_USES_ION),true)
+libOmxVdec-def += -DUSE_ION
+#endif
 
 # ---------------------------------------------------------------------------------
 # 			Make the Shared library (libOmxVdec)
@@ -56,6 +53,13 @@ libOmxVdec-def += -D_ANDROID_ICS_
 
 include $(CLEAR_VARS)
 LOCAL_PATH:= $(ROOT_DIR)
+
+ifeq ($(TARGET_QCOM_DISPLAY_VARIANT),caf)
+DISPLAY := display-caf
+libOmxVdec-def += -DDISPLAYCAF
+else
+DISPLAY := display
+endif
 
 libmm-vdec-inc          := bionic/libc/include
 libmm-vdec-inc          += bionic/libstdc++/include
@@ -66,11 +70,18 @@ libmm-vdec-inc          += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 #DRM include - Interface which loads the DRM library
 libmm-vdec-inc	        += $(OMX_VIDEO_PATH)/DivxDrmDecrypt/inc
 libmm-vdec-inc          += hardware/qcom/display-legacy/libgralloc
-libmm-vdec-inc          += hardware/qcom/display-legacy/libgenlock
 libmm-vdec-inc          += frameworks/native/include/media/openmax
 libmm-vdec-inc          += frameworks/native/include/media/hardware
+libmm-vdec-inc          += hardware/qcom/media-caf/libc2dcolorconvert
+libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libcopybit
+libmm-vdec-inc          += frameworks/av/include/media/stagefright
+libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libqservice
 libmm-vdec-inc          += frameworks/av/media/libmediaplayerservice
 libmm-vdec-inc          += frameworks/native/include/binder
+ifeq ($(DISPLAY),display-caf)
+libmm-vdec-inc          += hardware/qcom/$(DISPLAY)/libqdutils
+endif
+
 
 LOCAL_MODULE                    := libOmxVdec
 LOCAL_MODULE_TAGS               := optional
@@ -78,10 +89,13 @@ LOCAL_CFLAGS                    := $(libOmxVdec-def)
 LOCAL_C_INCLUDES                += $(libmm-vdec-inc)
 
 LOCAL_PRELINK_MODULE    := false
-LOCAL_SHARED_LIBRARIES  := liblog libutils libbinder libcutils
+LOCAL_SHARED_LIBRARIES  := liblog libutils libbinder libcutils libdl
 
-LOCAL_SHARED_LIBRARIES += libgenlock
 LOCAL_SHARED_LIBRARIES  += libdivxdrmdecrypt
+LOCAL_SHARED_LIBRARIES += libqservice
+ifeq ($(DISPLAY),display-caf)
+LOCAL_SHARED_LIBRARIES  += libqdMetaData
+endif
 
 LOCAL_SRC_FILES         := src/frameparser.cpp
 LOCAL_SRC_FILES         += src/h264_utils.cpp
@@ -93,6 +107,7 @@ else
 LOCAL_SRC_FILES         += src/omx_vdec.cpp
 endif
 LOCAL_SRC_FILES         += ../common/src/extra_data_handler.cpp
+LOCAL_SRC_FILES         += ../common/src/vidc_color_converter.cpp
 
 LOCAL_ADDITIONAL_DEPENDENCIES  := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
 
@@ -108,7 +123,7 @@ mm-vdec-test-inc    += $(LOCAL_PATH)/inc
 mm-vdec-test-inc    += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
 LOCAL_MODULE                    := mm-vdec-omx-test
-LOCAL_MODULE_TAGS               := optional
+LOCAL_MODULE_TAGS               := debug
 LOCAL_CFLAGS                    := $(libOmxVdec-def)
 LOCAL_C_INCLUDES                := $(mm-vdec-test-inc)
 
@@ -132,7 +147,7 @@ mm-vdec-drv-test-inc    += $(LOCAL_PATH)/inc
 mm-vdec-drv-test-inc    += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
 LOCAL_MODULE                    := mm-video-driver-test
-LOCAL_MODULE_TAGS               := optional
+LOCAL_MODULE_TAGS               := debug
 LOCAL_CFLAGS                    := $(libOmxVdec-def)
 LOCAL_C_INCLUDES                := $(mm-vdec-drv-test-inc)
 LOCAL_PRELINK_MODULE            := false

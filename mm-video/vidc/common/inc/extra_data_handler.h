@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -8,7 +8,7 @@ modification, are permitted provided that the following conditions are met:
     * Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-    * Neither the name of Code Aurora nor
+    * Neither the name of the Linux Foundation nor
       the names of its contributors may be used to endorse or promote
       products derived from this software without specific prior written
       permission.
@@ -43,12 +43,12 @@ extern "C"{
 #include<utils/Log.h>
 }
 #ifdef ENABLE_DEBUG_LOW
-#define DEBUG_PRINT_LOW ALOGV
+#define DEBUG_PRINT_LOW ALOGE
 #else
 #define DEBUG_PRINT_LOW
 #endif
 #ifdef ENABLE_DEBUG_HIGH
-#define DEBUG_PRINT_HIGH ALOGV
+#define DEBUG_PRINT_HIGH ALOGE
 #else
 #define DEBUG_PRINT_HIGH
 #endif
@@ -70,15 +70,24 @@ extern "C"{
 #define VDEC_OMX_SEI 0x7F000007
 #define FRAME_PACK_SIZE 18
 #define H264_EMULATION_BYTE 0x03
+#define OMX_SPEC_VERSION  0x00000101
+#define OUT_PORT_INDEX  1
+
+#define EXTRADATA_HDR_SIZE                    (20)
+#define EXTRADATA_PAYLOAD_NONE_SIZE           (4)
+#define EXTRADATA_PAYLOAD_LTRINFO_SIZE        (4)
+
 class extra_data_handler 
 {
 public:
   extra_data_handler();
   ~extra_data_handler();
-  OMX_U32 parse_extra_data(OMX_BUFFERHEADERTYPE *buf_hdr);
+  OMX_U32 parse_extra_data(OMX_BUFFERHEADERTYPE *buf_hdr, OMX_U32 extradata_offset,
+      OMX_U32 extradata_ltrid);
   OMX_U32 create_extra_data(OMX_BUFFERHEADERTYPE *buf_hdr);
   OMX_U32 get_frame_pack_data(OMX_QCOM_FRAME_PACK_ARRANGEMENT *frame_pack);
   OMX_U32 set_frame_pack_data(OMX_QCOM_FRAME_PACK_ARRANGEMENT *frame_pack);
+
 private:
   OMX_QCOM_FRAME_PACK_ARRANGEMENT frame_packing_arrangement;
   OMX_U8 *rbsp_buf;
