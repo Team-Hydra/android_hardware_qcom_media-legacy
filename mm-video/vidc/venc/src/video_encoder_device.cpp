@@ -1232,11 +1232,12 @@ OMX_U32 venc_dev::pmem_allocate(OMX_U32 size, OMX_U32 alignment, OMX_U32 count)
       return -1;
   }
 
+  recon_buff[count].alloc_data.flags = 0;
   recon_buff[count].alloc_data.len = size;
 #ifdef MAX_RES_720P
-  recon_buff[count].alloc_data.flags = ION_HEAP(MEM_HEAP_ID);
+  recon_buff[count].alloc_data.heap_mask = ION_HEAP(MEM_HEAP_ID);
 #else
-  recon_buff[count].alloc_data.flags = (ION_HEAP(MEM_HEAP_ID) |
+  recon_buff[count].alloc_data.heap_mask = (ION_HEAP(MEM_HEAP_ID) |
                                         ION_HEAP(ION_IOMMU_HEAP_ID));
 #endif
   recon_buff[count].alloc_data.align = clip2(alignment);
